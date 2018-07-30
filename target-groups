@@ -1,0 +1,72 @@
+#!/bin/bash
+
+Target=$1
+Region=$2
+Action=$3
+Count=${#Region}
+let Count=$Count+56
+TGroups=`aws elbv2 describe-target-groups --region=$Region | grep GroupArn | awk '{print $2}' | cut -c2- | rev | cut -c3- | rev`
+Name=`aws ec2 describe-instances --instance-id $Target --region=$Region | jq '.Reservations[0].Instances[0].Tags[0].Value' | cut -c2- | rev | cut -c2- | rev`
+
+if [ $Action = "-r" ]; then
+	if [ ! -f $Name ]; then
+		echo file $Name does not exist! Run with -l first to generate list of Target Groups.
+	else
+		echo Removing $Name / $1 from the the following target groups:
+		ARNs=`cat $Name`
+		for ARN in $ARNs; do
+			echo $ARN
+			aws elbv2 deregister-targets --target-group-arn $ARN --targets Id=$Target --region=$Region
+		done
+	fi
+	exit 0;
+fi
+
+if [ $Action = "-a" ]; then
+        if [ ! -f $Name ]; then
+                echo file $Name does not exist! Run with -l action first to generate list of Target Groups.
+        else
+		echo adding $Name / $1 to the the following target groups:
+                ARNs=`cat $Name`
+                for ARN in $ARNs; do
+			echo $ARN
+                        aws elbv2 register-targets --target-group-arn $ARN --targets Id=$Target --region=$Region
+                done
+        fi
+	exit 0;
+
+fi
+
+if [ $Action = "-l" ]; then
+
+	if [ $4 != "-t" ]; then
+
+		if [ -f $Name ]; then
+
+			rm $Name
+
+		fi
+
+	fi
+
+	echo  Instance $Name / $1 is a member of the following target groups:
+
+	for ARN in $TGroups; do
+		Health=`aws elbv2 describe-target-health --target-group-arn $ARN --targets Id=$Target --region=$Region | jq '.TargetHealthDescriptions[0].TargetHealth.Reason'`
+		if [ $Health != "\"Target.NotRegistered\"" ]; then
+			
+			if [ $4 != "-t" ]; then
+
+				echo $ARN >> $Name
+			fi
+
+			echo $ARN
+
+		fi
+	done
+
+	exit 0;
+
+fi
+
+echo Invalid Action!

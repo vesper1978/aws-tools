@@ -1,0 +1,8 @@
+#!/bin/bash
+#
+# Usage: aws-status <instance name> <region>
+#
+Id=`aws ec2 describe-instances --filter "Name=tag:Name,Values=$1" --region $2 | grep -i InstanceId | awk '{print $2}' | cut -c2-20`
+State=`aws ec2 describe-instances --filter "Name=tag:Name,Values=$1" --region $2 | jq '.Reservations[0].Instances[0].State.Name' | cut -c2- | rev | cut -c2- | rev`
+
+echo $1 / $Id state is $State

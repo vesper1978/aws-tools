@@ -1,0 +1,10 @@
+#!/bin/bash
+#
+# Usage: aws-stop <instance name> <region>
+#
+
+Id=`aws ec2 describe-instances --filter "Name=tag:Name,Values=$1" | grep -i InstanceId | awk '{print $2}' | cut -c2-20`
+
+echo Stopping $1 / $Id
+
+aws ec2 stop-instances --instance-ids $Id --region $2 --dry-run
