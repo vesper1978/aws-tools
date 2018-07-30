@@ -1,0 +1,53 @@
+#!/bin/bash
+#
+# Backup local folders to their own encrypted tar on Amazon S3 and send an email if there's an error.
+# Author: Jason Keirstead
+# Usage: ./backup-s3-enc <location> <s3 bucket name> <prefix>
+# Example: ./backup-s3-enc /srv/www backups www
+#
+export AWS_CONFIG_FILE=""
+export ENCPASS=`cat encfile`
+BACKUPTIME=`date +%Y-%d-%m`
+SOURCES=`find $1 -maxdepth 1 -type d | grep $3`
+S3BUCKET=$2
+COUNT=${#1}
+ERROR=0
+TIME=`date`
+RECIPIENT="insert@email.com"
+
+for SOURCE in $SOURCES; do
+        BACKUPFILE=`echo $SOURCE | cut -c$COUNT-`
+        echo $TIME: Backing up $SOURCE to s3://$S3BUCKET/$BACKUPFILE-$BACKUPTIME.tar-enc >> /tmp/backup-s3-$BACKUPTIME.log
+        tar cf - $SOURCE | openssl enc -e -aes-256-cbc -rc4 -out $BACKUPFILE-$BACKUPTIME.tar-enc -pass env:ENCPASS
+        aws s3 cp $BACKUPFILE-$BACKUPTIME.tar-enc s3://$S3BUCKET$BACKUPFILE-$BACKUPTIME.tar-enc
+        LOCALSIZE=`stat -c%s $BACKUPFILE-$BACKUPTIME.tar-enc`
+        S3SIZE=`aws s3 ls s3://$S3BUCKET$BACKUPFILE-$BACKUPTIME.tar-enc | awk '{print $3}'`
+
+        if [ "$LOCALSIZE" = "0" ]; then
+                ERROR=$((ERROR+1))
+                echo $TIME: Backup Failed, $BACKUPFILE-$BACKUPTIME.tar-enc is 0 bytes >> /tmp/backup-s3-$BACKUPTIME.log
+        fi
+
+        if [ "$S3SIZE" = "0" ]; then
+                ERROR=$((ERROR+1))
+                echo $TIME: Backup Failed, s3://$S3BUCKET$BACKUPFILE-$BACKUPTIME.tar-enc is 0 bytes >> /tmp/backup-s3-$BACKUPTIME.log
+        fi
+
+        if [ "$LOCALSIZE" != "$S3SIZE" ]; then
+                ERROR=$((ERROR+1))
+                echo $TIME: Backup Failed, Local $BACKUPFILE-$BACKUPTIME.tar-enc Filesize $LOCALSIZE and Remote s3://$S3BUCKET$BACKUPFILE-$BACKUPTIME.tar-enc Filesize $S3SIZE are not the same >> /tmp/backup-s3-$BACKUPTIME.log
+        fi
+
+        rm $BACKUPFILE-$BACKUPTIME.tar-enc
+
+done
+
+if [ $ERROR -gt 0 ]; then
+
+        exit 0;
+        echo "There were errors encountered during backup. Please see attached log" | mailx -a /tmp/backup-s3-$BACKUPTIME.log -s "Backup Errors" $RECIPIENT
+fi
+
+rm /tmp/backup-s3-$BACKUPTIME.log
+
+
